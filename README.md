@@ -138,6 +138,58 @@ doc.font(fontRegular).fontSize(10).text('...'); // body
 
 ---
 
+## PDF Type 2b: Per-Test Participants PDF *(2026-06-28)*
+
+**Backend trigger:** `POST /test-cycles/export-store-test-participants`
+**Controller:** `exportTestParticipants` (controllers/tests.js)
+**Frontend service:** `TestCycleService.exportTestParticipants(test_id)`
+
+Same PDF as Type 2 but for a **single test day**: fetches one Test (store-scoped, same populate),
+reuses `buildTestCycleStructure([test])` + `createTestCyclePdf`. Triggered from the per-day two-role
+"Εξαγωγή" action sheet (the other role is the seating PDF below). The **global** report
+(`exportTestCycleReport`) is unchanged.
+
+---
+
+## PDF Type 3: Seating Plan PDF *(2026-06-28)*
+
+**Backend trigger:** `POST /test-cycles/export-store-test-seating`
+**Helper:** `helpers/createSeatingPlanPdf.js`
+**Controller:** `exportTestSeating` (controllers/tests.js)
+**Frontend service:** `TestCycleService.exportTestSeatingPlan(test_id)`
+
+### Helper signature
+```javascript
+async function createSeatingPlanPdf({ title, date, rooms })
+// rooms: [{ name, layout, bySeat: { [seatId]: { last, first } } }]
+// layout = ClassRoom.layout (desks[], seats[], canvasSize). Returns: Buffer
+```
+
+### Structure — **landscape A4, one page per classroom** (only rooms with assignments)
+```
+[Header] room name (16pt bold) + "{cycle description} — DD-MM-YYYY"
+[Plan] zoom-to-content: fit the bounding box of desks+seats (rotation-safe half-diagonal, padded)
+       into the drawable area — NOT the whole 1200x800 canvas, so everything renders larger.
+  Desks → rotated rects (doc.rotate(angle, {origin:[cx,cy]})) + centered label
+  Seats → circles. Occupied = green (#d3f9d8) with the student's name on TWO LINES:
+            surname (bold) on top, first name below, auto-shrunk per line via doc.widthOfString
+            (surname 8–14pt, first name 7–12pt) so long names are never truncated.
+          Free = light yellow with the seat number.
+```
+
+### Why two lines + auto-fit
+First version drew a single truncated line at ≤9pt — too small for print and names got cut. Now each
+line shrinks to fit its width (down to a min) and the page zooms into the used content, so names are
+large and complete. Backend sends `{ last, first }` per seat (not a joined string) so the helper can
+split the lines.
+
+### S3 / download
+Uses the shared `uploadReportPdf(pdfBuffer, group_id, store_id, filename)` helper in controllers/tests.js
+(bucket `logeion-test-cycle-reports`, path `test-cycle-reports/{group_id}/{store_id}/`, 60s signed URL).
+Frontend downloads via a `triggerDownload` anchor (`<a download>`), not `window.open`.
+
+---
+
 ## Greek Font Support
 
 **Both PDFs use DejaVu Sans** because pdfkit's built-in fonts (Helvetica, Times, Courier) don't support the Greek Unicode block (U+0370–U+03FF). Without DejaVu, Greek characters render as boxes or are omitted.
@@ -186,10 +238,15 @@ res.json({ success: true, downloadUrl: signedUrl, filename });
 | PDF Type | Bucket | Path prefix |
 |---|---|---|
 | Private lesson billing | `logeion-private-lesson-costs` | `private-lesson-costs/{group_id}/{store_id}/` |
-| Test cycle report | `logeion-educational-material` | `test-cycle-reports/{group_id}/{store_id}/` |
+| Test cycle report | `logeion-test-cycle-reports` | `test-cycle-reports/{group_id}/{store_id}/` |
+| Per-test participants *(2026-06-28)* | `logeion-test-cycle-reports` | `test-cycle-reports/{group_id}/{store_id}/` |
+| Seating plan *(2026-06-28)* | `logeion-test-cycle-reports` | `test-cycle-reports/{group_id}/{store_id}/` |
 | Educational files | `logeion-educational-material` | `educational-materials/{group_id}/{store_id}/` |
 
-Note: `logeion-educational-material` is shared between educational files and test cycle reports. They are differentiated by path prefix.
+> ⚠️ **Doc drift corrected (2026-06-28):** an earlier version of this file claimed the test cycle report
+> used `logeion-educational-material`. The actual code (`controllers/tests.js`) uses
+> **`logeion-test-cycle-reports`** — verified against source. All three test-cycle PDFs share that bucket,
+> differentiated only by filename prefix (`test_cycle_…`, `test_participants_…`, `test_seating_…`).
 
 ---
 
