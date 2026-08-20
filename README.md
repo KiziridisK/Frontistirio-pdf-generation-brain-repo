@@ -171,6 +171,9 @@ async function createSeatingPlanPdf({ title, date, rooms })
 [Plan] zoom-to-content: fit the bounding box of desks+seats (rotation-safe half-diagonal, padded)
        into the drawable area — NOT the whole 1200x800 canvas, so everything renders larger.
   Desks → rotated rects (doc.rotate(angle, {origin:[cx,cy]})) + centered label
+          shape === "circle" (2026-07-23) → doc.ellipse(cx, cy, w/2, h/2) instead of doc.rect.
+          Missing shape = "rect", so pre-2026-07-23 layouts render unchanged. computeBounds
+          needed no change: the half-diagonal over-estimates an ellipse (harmless padding).
   Seats → circles. Occupied = green (#d3f9d8) with the student's name on TWO LINES:
             surname (bold) on top, first name below, auto-shrunk per line via doc.widthOfString
             (surname 8–14pt, first name 7–12pt) so long names are never truncated.
